@@ -23,7 +23,7 @@
         .item-card { background:var(--card2); border-radius:16px; overflow:hidden; border:1px solid var(--border); transition:0.2s; display:flex; flex-direction:column; position:relative; }
         .item-card:active { transform:scale(0.97); border-color:var(--gold); }
         .discount-badge { position:absolute; top:8px; left:8px; background:#e74c3c; color:#fff; padding:3px 10px; border-radius:12px; font-weight:700; font-size:0.7rem; z-index:2; }
-        .item-img { width:100%; height:110px; object-fit:cover; background:#1a1a30; display:none; } /* عکس‌ها مخفی */
+        .item-img { display:none; }
         .item-info { padding:12px; flex:1; display:flex; flex-direction:column; gap:5px; }
         .item-name { font-weight:700; font-size:0.85rem; color:#fff; }
         .item-stock { font-size:0.7rem; color:#aaa; }
@@ -125,25 +125,52 @@
         }
 
         async function loadAllUsers() {
+            // localStorage اولویت
+            const savedId = localStorage.getItem('mafiaSun_userId');
+            if (savedId) currentUser.userId = savedId;
+            const localData = localStorage.getItem('mafiaSun_storeData');
+            if (localData) {
+                const parsed = JSON.parse(localData);
+                currentUser = { ...currentUser, ...parsed, userId: currentUser.userId || parsed.userId };
+            }
+            if (!currentUser.userId) {
+                currentUser.userId = Date.now().toString();
+                localStorage.setItem('mafiaSun_userId', currentUser.userId);
+            }
+
             try {
                 const resp = await fetch(JSONBIN_URL, { headers: { 'X-Master-Key': JSONBIN_KEY } });
-                if (!resp.ok) throw new Error();
-                const data = await resp.json();
-                allUsers = data.record?.users || {};
-                const uid = localStorage.getItem('mafiaSun_userId');
-                if (uid && allUsers[uid]) {
-                    currentUser = { userId: uid, ...allUsers[uid] };
-                } else {
-                    currentUser.userId = Date.now().toString();
-                    localStorage.setItem('mafiaSun_userId', currentUser.userId);
-                    await saveAllUsers();
+                if (resp.ok) {
+                    const data = await resp.json();
+                    allUsers = data.record?.users || {};
+                    if (allUsers[currentUser.userId]) {
+                        const u = allUsers[currentUser.userId];
+                        currentUser.userName = u.userName || currentUser.userName;
+                        currentUser.gems = u.gems || currentUser.gems;
+                        currentUser.coins = u.coins || currentUser.coins;
+                        currentUser.tickets = u.tickets || [];
+                        currentUser.purchases = u.purchases || [];
+                        currentUser.daily = u.daily || currentUser.daily;
+                        currentUser.toman = u.toman || currentUser.toman;
+                    } else {
+                        await saveAllUsers();
+                    }
                 }
-            } catch(e) { console.warn('آفلاین'); }
+            } catch(e) { console.warn('آفلاین - داده محلی'); }
+
+            saveToLocal();
             updateWalletDisplay();
             renderCurrentTab();
         }
 
+        function saveToLocal() {
+            const data = { ...currentUser };
+            localStorage.setItem('mafiaSun_storeData', JSON.stringify(data));
+            localStorage.setItem('mafiaSun_userId', currentUser.userId);
+        }
+
         async function saveAllUsers() {
+            saveToLocal();
             allUsers[currentUser.userId] = {
                 userName: currentUser.userName, gems: currentUser.gems, coins: currentUser.coins,
                 tickets: currentUser.tickets, purchases: currentUser.purchases, daily: currentUser.daily, toman: currentUser.toman
@@ -154,7 +181,7 @@
                     headers: { 'X-Master-Key': JSONBIN_KEY, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ users: allUsers })
                 });
-            } catch(e) { console.warn('ذخیره ناموفق'); }
+            } catch(e) { console.warn('ذخیره سرور ناموفق'); }
         }
 
         function updateWalletDisplay() {
